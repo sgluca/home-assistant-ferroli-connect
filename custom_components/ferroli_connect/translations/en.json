@@ -1,0 +1,31 @@
+{
+  "title": "Ferroli Connect",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ferroli Connect — zone readings",
+        "description": "Sign in to Ferroli Connect. Only the session token is saved. Experimental read-only version.",
+        "data": {
+          "username": "Ferroli email / account",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Sign in again",
+        "data": {
+          "username": "Ferroli email / account",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Authentication rejected.",
+      "cannot_connect": "Cannot connect to Ferroli.",
+      "wrong_account": "Use the account originally configured."
+    },
+    "abort": {
+      "already_configured": "Account already configured.",
+      "reauth_successful": "Authentication updated."
+    }
+  }
+}

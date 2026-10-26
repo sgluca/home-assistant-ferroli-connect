@@ -1,0 +1,32 @@
+{
+  "title": "Ferroli Connect",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ferroli Connect — letture delle zone",
+        "description": "Accedi con il tuo account Ferroli Connect. Viene conservato il token, non la password. Versione sperimentale in sola lettura.",
+        "data": {
+          "username": "Email / account Ferroli",
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Rinnova accesso a Ferroli Connect",
+        "description": "Inserisci nuovamente le credenziali dello stesso account.",
+        "data": {
+          "username": "Email / account Ferroli",
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Account o password non validi, oppure accesso rifiutato.",
+      "cannot_connect": "Impossibile collegarsi al servizio Ferroli.",
+      "wrong_account": "Usa lo stesso account configurato in precedenza."
+    },
+    "abort": {
+      "already_configured": "Account già configurato.",
+      "reauth_successful": "Accesso aggiornato."
+    }
+  }
+}
