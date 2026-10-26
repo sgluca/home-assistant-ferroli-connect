@@ -146,10 +146,15 @@ def decode_frame(payload, zone_labels=None, gateway='dispositivo_1', *, inventor
             item.update(nome='modalita', valore=MODES.get(raw[0], 'sconosciuta'))
         elif flag == 0x2011 and len(raw) == 1 and raw[0] in (1, 2, 16):
             item.update(nome='rele_caldaia', valore=raw[0] in (1, 16))
+            # SwitchBoilerActivity.setSwitchImg: code 1 = OFF, code 2 = ON.
+            # Preserve the previous raw-contact sensor without inverting automations.
+            result.append({'campo': f'0x{flag:04X}', 'byte': 1,
+                           'nome': 'caldaia_accesa', 'valore': raw[0] == 2})
         elif flag == 0x200F and len(raw) == 1 and raw[0] in (0, 1):
             item.update(nome='collegamento_caldaia', valore='opentherm' if raw[0] else 'on_off')
         result.append(item)
-    decoded = {'tipo': struct.unpack_from('>H', payload)[0], 'versione': payload[4], 'campi': result}
+    decoded = {'tipo': struct.unpack_from('>H', payload)[0], 'message_id': payload[3],
+               'versione': payload[4], 'campi': result}
     boiler_markers = [raw for flag, raw in fields if flag == 0x2024]
     decoded['caldaia'] = (bool(boiler_markers) and all(len(raw) == 4 for raw in boiler_markers)
                           and not any(flag == 0x0017 for flag, _ in fields))

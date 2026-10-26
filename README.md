@@ -29,7 +29,7 @@ Per ciascuna zona, quando presenti nella telemetria:
 - modalità operativa;
 - batteria scarica e richiesta di riscaldamento.
 
-Per la caldaia espone **Relè caldaia attivo**, **Collegamento caldaia** (`on_off` / `opentherm`) e **OpenTherm connesso**, se il dispositivo restituisce questi dati. Lo stato del relè rappresenta il contatto del ricevitore e non conferma che la fiamma sia accesa. Con collegamento ON/OFF temperature interne e pressione della caldaia potrebbero non essere disponibili; questa versione non le espone e non le deduce dalle zone.
+Per la caldaia espone **Caldaia accesa (app)**, **Contatto relè caldaia chiuso**, **Collegamento caldaia** (`on_off` / `opentherm`) e **OpenTherm connesso**, se il dispositivo restituisce questi dati. L'app interpreta il codice `1` come spenta e `2` come accesa; il contatto chiuso è invece rappresentato dai codici `1`/`16`. Sono due significati distinti: la vecchia entità del relè mantiene identificativo e polarità, ma viene rinominata per chiarirlo. Per confrontare HA con l'app usa la nuova entità **Caldaia accesa (app)**. Nessuna delle due conferma che la fiamma sia accesa. Con collegamento ON/OFF temperature interne e pressione della caldaia potrebbero non essere disponibili; questa versione non le espone e non le deduce dalle zone.
 
 I sensori esistenti sono mantenuti. Non richiede un broker MQTT locale, modifiche al router o una nuova associazione dei termostati.
 
@@ -51,6 +51,8 @@ Ogni comando è inviato una sola volta, senza retained o ritrasmissione dopo una
 
 Dopo la conferma delle sottoscrizioni MQTT richiede lo stato di ciascuna zona e della caldaia. Ripete la lettura ogni **120 secondi** e dopo una riconnessione. Le richieste periodiche sono pacchetti Topband QUERY, senza retained. Solo un'azione esplicita su `climate` invia un pacchetto CONTROL di zona; non esiste un comando DELETE.
 
+Dalla **0.3.1** le richieste sono sequenziali: dopo l'invio il client attende fino a otto secondi una risposta di tipo 3 con lo stesso identificativo di messaggio e della zona, quindi passa alla successiva. Una mancata risposta non interrompe le altre letture. È un tentativo di migliorare il comportamento della zona Slave, non una correzione già verificata sul ricevitore reale. Le risposte che non mantengono il progressivo possono comunque aggiornare i dati, ma non vengono conteggiate come risposta correlata.
+
 La lettura HTTPS `thermostat_points/{wifi_box_code}/{sdid}`, usata anche dall'app, integra i campi mancanti separatamente per ogni zona. I valori sono stringhe esadecimali; campi assenti o non validi non diventano zero. La cache viene accettata solo con timestamp valido e recente, senza sovrascrivere telemetria MQTT più nuova. La sua età è riferita allo snapshot del cloud: il servizio non fornisce qui un timestamp per ogni singolo campo. Un errore o una mancata risposta di una zona non interrompe le letture dell'altra.
 
 Se un valore non viene aggiornato per dieci minuti, diventa non disponibile. La freschezza è verificata per ciascun valore: un aggiornamento del setpoint non rende recente la temperatura ambiente. I messaggi MQTT retained e le eventuali copie delle richieste QUERY non vengono usati come letture.
@@ -66,6 +68,8 @@ Il client MQTT ha un identificativo separato dall'app. La convivenza in ascolto 
 La password viene usata solo durante l'accesso e non viene salvata dall'integrazione. Home Assistant conserva il token di sessione nella propria configurazione; anche i backup possono contenerlo. Non condividere `.storage`, token o backup per segnalare un problema.
 
 La diagnostica scaricabile dalla pagina dell'integrazione include soltanto conteggi, età dei dati ed errori generici. Esclude configurazione, account, nomi delle zone, ID, token, topic e messaggi grezzi. In una issue indica la versione di Home Assistant, la versione dell'integrazione e il comportamento osservato; verifica sempre eventuali log prima di pubblicarli.
+
+Per ogni zona la diagnostica 0.3.1 include anche l'elenco dei campi riconosciuti (senza valori), richieste, risposte correlate, timeout e l'esito della lettura HTTPS. Consente di distinguere una risposta MQTT mancante da una cache vecchia o da un errore HTTP, senza pubblicare identificativi o credenziali.
 
 ## Limiti della beta
 

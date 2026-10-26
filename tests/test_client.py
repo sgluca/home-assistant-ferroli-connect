@@ -54,7 +54,7 @@ class FakeApi:
 
 class ClientTests(unittest.TestCase):
     def setUp(self):
-        self.client=module.Client('PRIVATE-http-token',lambda:None)
+        self.client=module.Client('PRIVATE-http-token',lambda:None,read_reply_timeout=0)
         self.client.api=FakeApi()
         with patch.object(module.mqtt,'Client',return_value=FakeMqtt()):
             self.client.start()
@@ -202,6 +202,46 @@ class ReadQueryTests(unittest.TestCase):
             data=protocol.decode_frame(p)
             fields=[f['valore'] for f in data['campi'] if f.get('nome')=='rele_caldaia']
             self.assertEqual(fields,[] if expected is None else [expected])
+
+    def test_boiler_app_state_is_distinct_from_closed_contact(self):
+        protocol=importlib.import_module('ferroli_under_test.protocol')
+        for code,app_on,closed in [(1,False,True),(2,True,False),(16,False,True)]:
+            p=struct.pack('>HBBBqqB',3,19,1,100,0,0,12)+struct.pack('>HHB',0x2011,1,code)
+            values={f['nome']:f['valore'] for f in protocol.decode_frame(p)['campi'] if 'nome' in f}
+            self.assertEqual(values['caldaia_accesa'],app_on)
+            self.assertEqual(values['rele_caldaia'],closed)
+
+
+class ReadSchedulingTests(unittest.TestCase):
+    setUp=ClientTests.setUp
+    tearDown=ClientTests.tearDown
+
+    def test_each_query_waits_for_same_zone_and_message_id(self):
+        self.client.last_poll=None
+        original=self.client.client.publish
+        observed=[]
+        def publish(topic,payload,qos,retain):
+            result=original(topic,payload,qos,retain)
+            if payload[:2]==b'\x00\x01':
+                pending=list(self.client.pending_reads)
+                observed.append(len(pending))
+                response=b'\x00\x03'+payload[2:]
+                self.client.receive(self.topic,response)
+            return result
+        self.client.client.publish=publish
+        self.client.poll_readings()
+        self.assertEqual(observed,[1,1,1])
+        self.assertTrue(all(z.get('read_replies')==1 for z in self.client.zones.values()))
+        self.assertFalse(self.client.pending_reads)
+
+    def test_diagnostics_explain_missing_fields_without_private_ids(self):
+        diag=self.client.diagnostics()
+        self.assertEqual(len(diag['zones']),2)
+        for zone in diag['zones']:
+            self.assertIn('last_cloud_result',zone)
+            self.assertIn('read_timeouts',zone)
+            self.assertIn('available_fields',zone)
+        self.assertNotIn('PRIVATE',json.dumps(diag))
 
 
 class ConstructorRegressionTests(unittest.TestCase):
