@@ -127,7 +127,10 @@ class ClientTests(unittest.TestCase):
 
     def test_poll_interval_and_reconnection(self):
         sent=self.client.diagnostics()['read_queries_sent']
-        last=self.client.last_poll
+        # Fixed representable clock values avoid platform-specific float rounding
+        # at exactly 120 seconds on Linux vs Windows monotonic clocks.
+        self.client.last_poll=100.0
+        last=100.0
         with patch.object(module.time,'monotonic',return_value=last+119): self.client.poll_readings()
         self.assertEqual(self.client.diagnostics()['read_queries_sent'],sent)
         with patch.object(module.time,'monotonic',return_value=last+120): self.client.poll_readings()
