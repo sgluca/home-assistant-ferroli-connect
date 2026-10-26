@@ -14,7 +14,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                      BinarySensorDeviceClass.HEAT))
     for uid in coordinator.data['boilers']:
         entities.append(FerroliBoilerBinary(coordinator, uid, 'rele_caldaia', 'Contatto relè caldaia chiuso', None))
-        entities.append(FerroliBoilerBinary(coordinator, uid, 'caldaia_accesa', 'Caldaia accesa (app)', None))
+        entities.append(FerroliBoilerBinary(coordinator, uid, 'caldaia_accesa', 'Caldaia accesa', None))
         entities.append(FerroliBoilerBinary(coordinator, uid, 'opentherm_connesso', 'OpenTherm connesso',
                                            BinarySensorDeviceClass.CONNECTIVITY))
     async_add_entities(entities)
