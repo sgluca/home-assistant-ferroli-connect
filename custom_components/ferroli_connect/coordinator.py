@@ -45,6 +45,7 @@ class FerroliCoordinator(DataUpdateCoordinator):
                     raise UpdateFailed('In attesa del prossimo tentativo')
                 self.next_attempt = time.monotonic() + 120
                 await self.hass.async_add_executor_job(self.client.start)
+            await self.hass.async_add_executor_job(self.client.poll_readings)
             return self.client.snapshot()
         except AuthError:
             raise ConfigEntryAuthFailed('Sessione scaduta: accedi nuovamente a Ferroli Connect') from None

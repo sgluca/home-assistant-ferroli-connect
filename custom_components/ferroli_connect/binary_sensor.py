@@ -12,6 +12,10 @@ async def async_setup_entry(hass, entry, async_add_entities):
                                      BinarySensorDeviceClass.BATTERY))
         entities.append(FerroliBinary(coordinator, uid, 'riscaldamento_attivo', 'Richiesta riscaldamento',
                                      BinarySensorDeviceClass.HEAT))
+    for uid in coordinator.data['boilers']:
+        entities.append(FerroliBoilerBinary(coordinator, uid, 'rele_caldaia', 'Relè caldaia attivo', None))
+        entities.append(FerroliBoilerBinary(coordinator, uid, 'opentherm_connesso', 'OpenTherm connesso',
+                                           BinarySensorDeviceClass.CONNECTIVITY))
     async_add_entities(entities)
 
 
@@ -23,3 +27,8 @@ class FerroliBinary(FerroliEntity, BinarySensorEntity):
     @property
     def is_on(self):
         return self.value
+
+
+class FerroliBoilerBinary(FerroliBinary):
+    collection = 'boilers'
+    model = 'Connect — caldaia'

@@ -14,7 +14,7 @@ from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHand
 
 import paho.mqtt.client as mqtt
 
-from .protocol import decode_frame, topic_from
+from .protocol import build_read_query, decode_frame, topic_from
 
 BASE = 'https://eu-api.topband-cloud.com/'
 
@@ -113,6 +113,13 @@ class Client:
         self.notify = notify
         self.lock = threading.Lock()
         self.zones = {}
+        self.boilers = {}
+        self.boiler_ids = {}
+        self.read_targets = []
+        self.last_poll = None
+        self.message_sequence = 0
+        self.queries_sent = 0
+        self.publish_errors = 0
         self.identities = {}
         self.labels = {}
         self.topics = {}
@@ -127,16 +134,22 @@ class Client:
 
     def snapshot(self):
         with self.lock:
-            return {'connected': self.connected, 'zones': deepcopy(self.zones)}
+            return {'connected': self.connected, 'zones': deepcopy(self.zones), 'boilers': deepcopy(self.boilers)}
 
     def diagnostics(self):
         with self.lock:
             return {'connected': self.connected, 'received': self.received, 'invalid_frames': self.invalid,
                     'unassigned_frames': self.unassigned, 'zone_count': len(self.zones),
+                    'boiler_count': len(self.boilers), 'read_queries_sent': self.queries_sent,
+                    'read_publish_errors': self.publish_errors,
+                    'last_read_age_seconds': round(time.monotonic()-self.last_poll) if self.last_poll is not None else None,
                     'last_error': self.last_error,
                     'zones': [{'alias': f'zone_{i}', 'received': z['received'],
                                'age_seconds': round(time.monotonic()-z['seen']) if z['seen'] else None}
-                              for i, z in enumerate(self.zones.values(), 1)]}
+                              for i, z in enumerate(self.zones.values(), 1)],
+                    'boilers': [{'alias': f'boiler_{i}', 'received': b['received'],
+                                 'age_seconds': round(time.monotonic()-b['seen']) if b['seen'] else None}
+                                for i, b in enumerate(self.boilers.values(), 1)]}
 
     def refresh_token(self):
         if time.monotonic() - self._last_refresh < 1800:
@@ -162,14 +175,28 @@ class Client:
         config = self.api.call('api/mqtt/app', params={'app_slug': APP_SLUG})
         credentials = self.api.call('api/mqtt/token', params={'app_slug': APP_SLUG})
         zones, identities, labels, topics = {}, {}, {}, {}
+        boilers, boiler_ids, read_targets = {}, {}, []
         user, app = required(credentials, 'user_slug'), required(credentials, 'app_code')
         client_id = f'{time.time_ns()//1_000_000}_{user}$of${app}'
-        incoming = config.get('topic', {}).get('1', {})
-        if not isinstance(incoming, dict):
+        topic_config = config.get('topic')
+        if not isinstance(topic_config, dict):
+            raise CloudError('Invalid MQTT configuration')
+        incoming, outgoing = topic_config.get('1'), topic_config.get('2')
+        if not isinstance(incoming, dict) or not isinstance(outgoing, dict):
             raise CloudError('Invalid MQTT configuration')
         for number, device in enumerate(devices, 1):
             gateway = f'dispositivo_{number}'
             product, code = required(device, 'product_code'), required(device, 'device_code')
+            values = {'product_code': product, 'device_code': code, 'app_client_id': client_id,
+                      'app_code': app, 'user_slug': user}
+            try:
+                request_topic = topic_from(outgoing.get('TO_DEV'), values)
+            except ValueError:
+                raise CloudError('Missing or invalid read-request topic') from None
+            boiler_uid = hashlib.sha256((product + ':' + code + ':boiler').encode()).hexdigest()
+            boiler_ids[gateway] = boiler_uid
+            boilers[boiler_uid] = {'name': 'Caldaia' if len(devices) == 1 else f'Caldaia {number}',
+                                   'seen': 0.0, 'received': 0, 'values': {}, 'value_times': {}}
             children = device.get('child_devices')
             if not isinstance(children, list):
                 raise CloudError('Missing zones')
@@ -192,8 +219,8 @@ class Client:
                 name = ''.join(c for c in name if c.isprintable())[:100] if isinstance(name, str) else ''
                 zones[uid] = {'name': name or f'Zona {index}', 'seen': 0.0, 'received': 0,
                               'values': {}, 'value_times': {}}
-            values = {'product_code': product, 'device_code': code, 'app_client_id': client_id,
-                      'app_code': app, 'user_slug': user}
+                read_targets.append((request_topic, bytes.fromhex(sdid)))
+            read_targets.append((request_topic, None))
             for key in ('DEV_REALT', 'FROM_DEV'):
                 try:
                     topics[topic_from(incoming.get(key), values)] = gateway
@@ -218,6 +245,13 @@ class Client:
                     zone.update(seen=old['seen'], received=old['received'], values=old['values'],
                                 value_times=old['value_times'])
             self.zones, self.identities, self.labels, self.topics = zones, identities, labels, topics
+            for uid, boiler in boilers.items():
+                if uid in self.boilers:
+                    old = self.boilers[uid]
+                    boiler.update(seen=old['seen'], received=old['received'], values=old['values'],
+                                  value_times=old['value_times'])
+            self.boilers, self.boiler_ids, self.read_targets = boilers, boiler_ids, read_targets
+            self.last_poll = None
             self.last_error = None
 
         def on_connect(c, userdata, flags, reason, properties):
@@ -268,11 +302,40 @@ class Client:
             client.loop_start()
             if not ready.wait(25) or failure or pending:
                 raise CloudError('MQTT connection or subscription failed')
+            self.poll_readings()
         except Exception as exc:
             self.stop()
             if isinstance(exc, CloudError):
                 raise
             raise CloudError('MQTT TLS connection failed') from None
+
+    def poll_readings(self):
+        """Executor-only. Fixed read-only queries after SUBACK and every 120 s."""
+        now = time.monotonic()
+        with self.lock:
+            if not self.connected or (self.last_poll is not None and now-self.last_poll < 120):
+                return
+            self.last_poll = now  # Failed sends are also throttled; never retry every tick.
+            targets, client, generation = list(self.read_targets), self.client, self._generation
+        for topic, thermostat_id in targets:
+            if generation != self._generation:
+                return
+            self.message_sequence = (self.message_sequence+1) % 256
+            payload = build_read_query(thermostat_id, self.message_sequence)
+            try:
+                info = client.publish(topic, payload=payload, qos=1, retain=False)
+                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                    raise CloudError('Read request publish rejected')
+                info.wait_for_publish(timeout=5)
+                if not info.is_published():
+                    raise CloudError('Read request delivery timeout')
+            except Exception:
+                with self.lock:
+                    self.publish_errors += 1
+                    self.last_error = 'read_request_failed'
+                raise CloudError('Read request delivery failed') from None
+            with self.lock:
+                self.queries_sent += 1
 
     def receive(self, topic, payload, retained=False):
         gateway = self.topics.get(topic)
@@ -288,11 +351,16 @@ class Client:
             except ValueError:
                 self.invalid += 1
                 return
-            uid = self.identities.get((gateway, decoded.get('zona')))
-            if uid is None:
+            # Do not interpret echoed QUERY placeholders as live measurements.
+            if decoded['tipo'] not in (3, 0x1004):
                 self.unassigned += 1
                 return
-            zone = self.zones[uid]
+            uid = self.identities.get((gateway, decoded.get('zona')))
+            boiler_uid = self.boiler_ids.get(gateway) if decoded.get('caldaia') else None
+            if uid is None and boiler_uid is None:
+                self.unassigned += 1
+                return
+            zone = self.zones[uid] if uid is not None else self.boilers[boiler_uid]
             zone['received'] += 1
             # Retained frames may predate the current state. Never replace a
             # newer live value or mark an entity available on this evidence.
@@ -301,6 +369,9 @@ class Client:
             zone['seen'] = time.monotonic()
             for field in decoded['campi']:
                 if 'nome' in field and 'valore' in field:
+                    if boiler_uid is not None and field['nome'] not in {
+                        'rele_caldaia', 'collegamento_caldaia', 'opentherm_connesso'}:
+                        continue
                     zone['values'][field['nome']] = field['valore']
                     zone['value_times'][field['nome']] = time.monotonic()
         self.notify()

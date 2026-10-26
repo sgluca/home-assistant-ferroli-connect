@@ -1,8 +1,8 @@
 # Ferroli Connect for Home Assistant
 
-Unofficial, experimental **read-only** integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone is represented by a separate Home Assistant device, using its cloud name.
+Unofficial, experimental **read-only** integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone is represented by a separate Home Assistant device, using its cloud name. A separate device represents the boiler connected to each receiver.
 
-**Stato attuale:** letture e distinzione di due zone verificate su un impianto; nessun comando di temperatura o modalità. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
+**Stato attuale:** ricezione e distinzione di due zone verificate su un impianto. La versione **0.2.0** aggiunge richieste automatiche di lettura e stato del relè caldaia: queste nuove funzioni hanno superato i test simulati e richiedono ancora verifica sull'impianto. Nessun comando di temperatura o modalità. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
 
 ## Installazione con HACS
 
@@ -29,15 +29,21 @@ Per ciascuna zona, quando presenti nella telemetria:
 - modalità operativa;
 - batteria scarica e richiesta di riscaldamento.
 
-Non crea ancora entità `climate` e non invia comandi MQTT. L'app ufficiale continua a essere usata per i comandi. Non richiede un broker MQTT locale, modifiche al router o una nuova associazione dei termostati.
+Per la caldaia espone **Relè caldaia attivo**, **Collegamento caldaia** (`on_off` / `opentherm`) e **OpenTherm connesso**, se il dispositivo restituisce questi dati. Lo stato del relè rappresenta il contatto del ricevitore e non conferma che la fiamma sia accesa. Con collegamento ON/OFF temperature interne e pressione della caldaia potrebbero non essere disponibili; questa versione non le espone e non le deduce dalle zone.
 
-Apri ogni zona nell'app ufficiale per ricevere i primi dati. Se un valore non viene aggiornato per dieci minuti, diventa non disponibile. La freschezza è verificata per ciascun valore: un aggiornamento del setpoint non rende recente la temperatura ambiente. I messaggi MQTT retained non rendono disponibili le letture e non sovrascrivono valori più recenti.
+Non crea ancora entità `climate`. L'app ufficiale continua a essere usata per i comandi. Non richiede un broker MQTT locale, modifiche al router o una nuova associazione dei termostati.
+
+### Aggiornamento con l'app chiusa
+
+Dopo la conferma delle sottoscrizioni MQTT richiede lo stato di ciascuna zona e della caldaia. Ripete la lettura ogni **120 secondi** e dopo una riconnessione. Pubblica esclusivamente pacchetti Topband **QUERY (tipo 1)**, sul topic specifico restituito dal cloud, senza messaggi retained. Non invia pacchetti CONTROL o DELETE e non modifica setpoint, modalità o programmi. La conferma di consegna MQTT non equivale a una risposta del dispositivo: le entità diventano disponibili solo quando arriva telemetria valida.
+
+Se un valore non viene aggiornato per dieci minuti, diventa non disponibile. La freschezza è verificata per ciascun valore: un aggiornamento del setpoint non rende recente la temperatura ambiente. I messaggi MQTT retained e le eventuali copie delle richieste QUERY non vengono usati come letture.
 
 ## Come funziona
 
 L'integrazione usa il cloud europeo Topband tramite HTTPS per la sessione, l'inventario e la configurazione MQTT; riceve quindi la telemetria mediante MQTT con TLS verificato. Distingue le zone confrontando il campo binario `0x0017` con `child_devices.sdid` del cloud, come l'app Android. Gli ID mancanti, duplicati o non riconosciuti non vengono attribuiti a un'altra zona.
 
-Il client MQTT ha un identificativo separato dall'app. La convivenza è stata verificata durante brevi prove; il funzionamento prolungato, le riconnessioni e il rinnovo automatico del token richiedono ancora validazione sul servizio reale. Non si tratta di un'integrazione locale: serve la disponibilità del cloud.
+Il client MQTT ha un identificativo separato dall'app. La convivenza in ascolto passivo è stata verificata durante brevi prove; il funzionamento con letture automatiche, le riconnessioni e il rinnovo del token richiedono ancora validazione sul servizio reale. Non si tratta di un'integrazione locale: serve la disponibilità del cloud.
 
 ## Credenziali e diagnostica
 
@@ -48,7 +54,7 @@ La diagnostica scaricabile dalla pagina dell'integrazione include soltanto conte
 ## Limiti della beta
 
 - Nessuna modifica di setpoint, modalità o programmi, e nessun controllo locale.
-- Non invia interrogazioni per forzare l'aggiornamento: la frequenza della telemetria spontanea ad app chiusa va verificata sul dispositivo.
+- Le nuove interrogazioni sono ricostruite dal percorso di lettura dell'app 1.5.2; la risposta effettiva del gateway ad app chiusa va verificata sul tuo firmware.
 - Le temperature sono supportate in Celsius; se viene segnalata l'unità Fahrenheit diventano non disponibili.
 - Il flag di richiesta riscaldamento non dimostra che la fiamma della caldaia sia accesa.
 - Zone con SDID assente, non valido o duplicato bloccano l'avvio; dopo modifiche all'elenco delle zone ricarica l'integrazione.

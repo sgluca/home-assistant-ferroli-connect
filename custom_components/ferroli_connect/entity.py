@@ -9,20 +9,22 @@ from .const import DOMAIN, STALE_SECONDS
 
 class FerroliEntity(CoordinatorEntity):
     _attr_has_entity_name = True
+    collection = 'zones'
+    model = 'Connect — zona'
 
     def __init__(self, coordinator, uid, key, name):
         super().__init__(coordinator)
         self.uid, self.key = uid, key
         self._attr_unique_id = f'{uid}_{key}'
         self._attr_name = name
-        zone = coordinator.data['zones'][uid]
+        zone = coordinator.data[self.collection][uid]
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, uid)},
                                            name=zone['name'], manufacturer='Ferroli',
-                                           model='Connect — zona')
+                                           model=self.model)
 
     @property
     def zone(self):
-        return (self.coordinator.data or {}).get('zones', {}).get(self.uid)
+        return (self.coordinator.data or {}).get(self.collection, {}).get(self.uid)
 
     @property
     def available(self):

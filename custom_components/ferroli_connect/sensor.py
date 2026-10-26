@@ -15,6 +15,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     for uid in coordinator.data['zones']:
         entities.extend(FerroliTemperature(coordinator, uid, key, name) for key, name in TEMPERATURES.items())
         entities.append(FerroliMode(coordinator, uid, 'modalita', 'Modalità'))
+    for uid in coordinator.data['boilers']:
+        entities.append(FerroliBoilerConnection(coordinator, uid, 'collegamento_caldaia', 'Collegamento caldaia'))
     async_add_entities(entities)
 
 
@@ -39,3 +41,9 @@ class FerroliMode(FerroliEntity, SensorEntity):
     @property
     def native_value(self):
         return self.value
+
+
+class FerroliBoilerConnection(FerroliMode):
+    collection = 'boilers'
+    model = 'Connect — caldaia'
+    _attr_options = ['on_off', 'opentherm']
