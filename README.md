@@ -14,6 +14,10 @@ Unofficial Home Assistant integration for thermostats controlled by the **Ferrol
 
 Richiede Home Assistant **2026.10 o successivo** e accesso all'account Ferroli Connect.
 
+[![Apri il repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=sgluca&repository=home-assistant-ferroli-connect&category=integration)
+
+Con HACS già installato, usa il pulsante per aprire questo repository nel tuo Home Assistant. In alternativa, aggiungilo manualmente:
+
 1. Apri HACS, seleziona il menu e **Repository personalizzati**.
 2. Aggiungi `https://github.com/sgluca/home-assistant-ferroli-connect` con categoria **Integrazione**.
 3. Cerca **Ferroli Connect**, seleziona la versione stabile più recente e riavvia Home Assistant.
