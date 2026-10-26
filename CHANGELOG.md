@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.2
+
+- Corretti i pulsanti +/− quando il ricevitore restituisce minimo = massimo = 0: il valore veniva vincolato a zero e inviato al dispositivo. In questo caso si usa ora l’intervallo 5–35 °C del controllo manuale/automatico dell’app ufficiale, anche per validare i comandi. I limiti validi ricevuti restano prioritari; altre coppie incoerenti bloccano la scrittura.
+
+- L'entità **Caldaia accesa** perde il suffisso “(app)”, mantenendo identificativo e significato dello stato.
+- Aggiunte istruzioni per provare i comandi di temperatura sulle due zone tramite le entità Termostato, già disponibili dalla 0.3.0.
+- Aggiornamento delle letture e stato caldaia confermati dall'utente sull'impianto a due zone con la 0.3.1; scritture ancora da verificare sul dispositivo reale.
+
 ## 0.3.1
 
 - Aggiunta **Caldaia accesa (app)** con il significato usato dall'app ufficiale: `1` = spenta, `2` = accesa. Il contatto grezzo del relè resta distinto; l'entità precedente non viene invertita silenziosamente.

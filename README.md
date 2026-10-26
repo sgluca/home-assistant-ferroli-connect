@@ -2,7 +2,7 @@
 
 Unofficial, experimental Home Assistant integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone has a separate device, sensors and a `climate` entity. A separate device represents boiler status.
 
-**Stato attuale:** ricezione e distinzione di due zone verificate su un impianto. La **0.3.0** aggiunge `climate`, comandi delle zone e letture HTTPS supplementari per i valori mancanti. Queste nuove funzioni hanno superato test simulati e richiedono ancora verifica sull'impianto. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
+**Stato attuale:** ricezione, distinzione e aggiornamento delle due zone e stato caldaia confermati dall’utente con la **0.3.1** su un impianto. Le entità `climate` e i comandi delle zone sono disponibili dalla **0.3.0**: le scritture hanno superato test simulati e richiedono ancora verifica sull’impianto. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
 
 ## Installazione con HACS
 
@@ -29,7 +29,7 @@ Per ciascuna zona, quando presenti nella telemetria:
 - modalità operativa;
 - batteria scarica e richiesta di riscaldamento.
 
-Per la caldaia espone **Caldaia accesa (app)**, **Contatto relè caldaia chiuso**, **Collegamento caldaia** (`on_off` / `opentherm`) e **OpenTherm connesso**, se il dispositivo restituisce questi dati. L'app interpreta il codice `1` come spenta e `2` come accesa; il contatto chiuso è invece rappresentato dai codici `1`/`16`. Sono due significati distinti: la vecchia entità del relè mantiene identificativo e polarità, ma viene rinominata per chiarirlo. Per confrontare HA con l'app usa la nuova entità **Caldaia accesa (app)**. Nessuna delle due conferma che la fiamma sia accesa. Con collegamento ON/OFF temperature interne e pressione della caldaia potrebbero non essere disponibili; questa versione non le espone e non le deduce dalle zone.
+Per la caldaia espone **Caldaia accesa**, **Contatto relè caldaia chiuso**, **Collegamento caldaia** (`on_off` / `opentherm`) e **OpenTherm connesso**, se il dispositivo restituisce questi dati. L'app interpreta il codice `1` come spenta e `2` come accesa; il contatto chiuso è invece rappresentato dai codici `1`/`16`. Sono due significati distinti: la vecchia entità del relè mantiene identificativo e polarità, ma viene rinominata per chiarirlo. Per confrontare HA con l'app usa la nuova entità **Caldaia accesa**. Nessuna delle due conferma che la fiamma sia accesa. Con collegamento ON/OFF temperature interne e pressione della caldaia potrebbero non essere disponibili; questa versione non le espone e non le deduce dalle zone.
 
 I sensori esistenti sono mantenuti. Non richiede un broker MQTT locale, modifiche al router o una nuova associazione dei termostati.
 
@@ -43,7 +43,7 @@ Ogni zona espone un termostato `climate` con temperatura ambiente e obiettivo. L
 - Da Off scegli Manuale/Automatico prima di cambiare temperatura, oppure specifica insieme temperatura e modalità nell'azione di Home Assistant.
 - Il comando di accensione sceglie Manuale. Non sono esposti comandi di scrittura per la caldaia, gli installatori o i programmi.
 
-Le temperature sono accettate solo in Celsius, con passo 0,5 °C, entro i limiti effettivamente letti dal termostato. Se modalità, unità o limiti non sono disponibili o sono vecchi, la scrittura viene rifiutata. Non vengono eseguiti comandi all'avvio, al ripristino dello stato o alla riconnessione.
+Le temperature sono accettate solo in Celsius, con passo 0,5 °C, entro i limiti effettivamente letti dal termostato. Se modalità, unità o limiti non sono disponibili o sono vecchi, la scrittura viene rifiutata. Se entrambi i limiti aggiornati sono zero, dalla 0.3.2 si usa l’intervallo **5–35 °C**, ricavato dai controlli Manuale/Automatico dell’app 1.5.2: vale sia per il pannello sia per i comandi, impedendo l’invio di 0 °C. I limiti validi ricevuti hanno priorità. Altre coppie uguali, invertite o non finite bloccano il comando; in questi casi il pannello usa soltanto un intervallo provvisorio di visualizzazione. Non vengono eseguiti comandi all'avvio, al ripristino dello stato o alla riconnessione.
 
 Ogni comando è inviato una sola volta, senza retained o ritrasmissione dopo una riconnessione, e viene seguito da una richiesta di lettura. Il successo richiede valori ricevuti via MQTT dalla stessa zona dopo l'invio, entro 20 secondi: una conferma di trasporto o la cache HTTPS non bastano. L'interfaccia non anticipa il valore desiderato. Un timeout può significare che la modifica è stata applicata ma non confermata: controlla l'app prima di riprovare.
 
@@ -51,7 +51,7 @@ Ogni comando è inviato una sola volta, senza retained o ritrasmissione dopo una
 
 Dopo la conferma delle sottoscrizioni MQTT richiede lo stato di ciascuna zona e della caldaia. Ripete la lettura ogni **120 secondi** e dopo una riconnessione. Le richieste periodiche sono pacchetti Topband QUERY, senza retained. Solo un'azione esplicita su `climate` invia un pacchetto CONTROL di zona; non esiste un comando DELETE.
 
-Dalla **0.3.1** le richieste sono sequenziali: dopo l'invio il client attende fino a otto secondi una risposta di tipo 3 con lo stesso identificativo di messaggio e della zona, quindi passa alla successiva. Una mancata risposta non interrompe le altre letture. È un tentativo di migliorare il comportamento della zona Slave, non una correzione già verificata sul ricevitore reale. Le risposte che non mantengono il progressivo possono comunque aggiornare i dati, ma non vengono conteggiate come risposta correlata.
+Dalla **0.3.1** le richieste sono sequenziali: dopo l'invio il client attende fino a otto secondi una risposta di tipo 3 con lo stesso identificativo di messaggio e della zona, quindi passa alla successiva. Una mancata risposta non interrompe le altre letture. L’utente ha confermato il funzionamento delle letture sulla propria installazione a due zone dopo questo aggiornamento; il risultato su altri ricevitori resta da verificare. Le risposte che non mantengono il progressivo possono comunque aggiornare i dati, ma non vengono conteggiate come risposta correlata.
 
 La lettura HTTPS `thermostat_points/{wifi_box_code}/{sdid}`, usata anche dall'app, integra i campi mancanti separatamente per ogni zona. I valori sono stringhe esadecimali; campi assenti o non validi non diventano zero. La cache viene accettata solo con timestamp valido e recente, senza sovrascrivere telemetria MQTT più nuova. La sua età è riferita allo snapshot del cloud: il servizio non fornisce qui un timestamp per ogni singolo campo. Un errore o una mancata risposta di una zona non interrompe le letture dell'altra.
 
@@ -83,7 +83,17 @@ Per ogni zona la diagnostica 0.3.1 include anche l'elenco dei campi riconosciuti
 
 ## Verifica consigliata della beta
 
-Chiudi l'app e verifica prima le letture di entrambe le zone per almeno due cicli (circa quattro minuti). Poi, su una sola zona in Manuale, modifica il setpoint di 0,5 °C e controlla nell'app e sul termostato che sia cambiata soltanto quella zona; ripristina il valore iniziale. Verifica separatamente Automatico e la modifica temporanea. Le scritture sono sperimentali finché non sono state provate sul tuo firmware.
+I comandi sono nell’entità **Termostato** (`climate`) di ciascuna zona, accessibile da **Impostazioni → Dispositivi e servizi → Ferroli Connect → dispositivo della zona**. Apri l’entità per mostrare i controlli della temperatura; i sensori separati continuano a essere di sola lettura.
+
+1. Chiudi l’app e verifica le letture di entrambe le zone per almeno due cicli (circa quattro minuti).
+2. Sulla zona giorno scegli **Heat / Riscaldamento** (Manuale), annota il setpoint e modificalo di **0,5 °C**.
+3. Attendi la conferma in Home Assistant, poi verifica nell’app che sia cambiata soltanto la zona giorno. Ripristina il valore iniziale e chiudi l’app.
+4. Ripeti separatamente sulla zona notte, verificando che la zona giorno mantenga il proprio valore.
+5. Prova in seguito **Auto**: la temperatura crea una modifica temporanea; selezionando di nuovo Auto si torna al programma. Se inizialmente la zona seguiva il programma, riporta la modalità su Auto a fine prova.
+
+Se appare un errore di mancata conferma, controlla lo stato nell’app prima di ripetere il comando: il dispositivo potrebbe averlo applicato. Le scritture sono sperimentali finché non sono state provate sul tuo firmware.
+
+La 0.3.2 rinomina il sensore in **Caldaia accesa** mantenendo il suo identificativo. Se gli avevi assegnato un nome personalizzato in Home Assistant, quel nome resta: puoi modificarlo nelle impostazioni dell’entità.
 
 ## Sviluppo e test
 

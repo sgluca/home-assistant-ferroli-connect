@@ -16,7 +16,7 @@ from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHand
 import paho.mqtt.client as mqtt
 
 from .protocol import build_read_query, build_zone_control, decode_cloud_points, decode_frame, topic_from
-from .const import STALE_SECONDS
+from .const import STALE_SECONDS, temperature_limits
 
 BASE = 'https://eu-api.topband-cloud.com/'
 
@@ -472,6 +472,10 @@ class Client:
                     if not fresh('limite_minimo') or not fresh('limite_massimo'):
                         raise CloudError('Attendi i limiti di temperatura del termostato')
                     low, high = zone['values']['limite_minimo'], zone['values']['limite_massimo']
+                    limits = temperature_limits(low, high)
+                    if limits is None:
+                        raise CloudError('Limiti di temperatura non validi: attendi una lettura aggiornata')
+                    low, high = limits
                     if (type(temperature) not in (int, float) or not math.isfinite(temperature)
                         or not low <= temperature <= high or abs(temperature*2-round(temperature*2)) > 0.00001):
                         raise CloudError('Temperatura fuori dai limiti o dal passo di 0,5 °C')

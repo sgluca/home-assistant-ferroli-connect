@@ -107,3 +107,27 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(values['modalita'],'manuale')
         self.assertEqual(values['temperatura_manuale'],20)
         self.assertNotIn('PRIVATE',json.dumps(self.client.diagnostics()))
+
+    def test_invalid_limit_pairs_reject_even_zero_without_sending(self):
+        uid = self.prepare_zone()
+        for low, high in [(10, 10), (30, 5), (float('nan'), 30), (5, float('inf'))]:
+            self.client.zones[uid]['values'].update(limite_minimo=low, limite_massimo=high)
+            for temperature in (0, 21.5):
+                with self.subTest(low=low, high=high, temperature=temperature):
+                    with self.assertRaisesRegex(module.CloudError, 'Limiti di temperatura non validi'):
+                        self.client.write_zone(uid, temperature=temperature, timeout=0)
+        self.assertFalse(any(p[1][:2] == b'\x00\x02' for p in self.client.client.published))
+
+    def test_zero_limits_use_official_app_range_and_never_send_zero(self):
+        uid = self.prepare_zone()
+        self.client.zones[uid]['values'].update(limite_minimo=0, limite_massimo=0)
+        for temperature in (0, 4.5, 35.5):
+            with self.assertRaises(module.CloudError):
+                self.client.write_zone(uid, temperature=temperature, timeout=0)
+        self.assertFalse(any(p[1][:2] == b'\x00\x02' for p in self.client.client.published))
+        self.acknowledge_controls()
+        self.client.write_zone(uid, temperature=21.5, timeout=0)
+        writes = [p for p in self.client.client.published if p[1][:2] == b'\x00\x02']
+        self.assertEqual(len(writes), 1)
+        self.assertIn(struct.pack('>HHh', 0x1010, 2, 215), writes[0][1])
+        self.assertEqual(self.client.snapshot()['zones'][uid]['values']['temperatura_manuale'], 21.5)
