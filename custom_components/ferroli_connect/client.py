@@ -7,6 +7,7 @@ import re
 import ssl
 import threading
 import time
+import math
 from copy import deepcopy
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -14,7 +15,8 @@ from urllib.request import Request, build_opener, HTTPSHandler, HTTPRedirectHand
 
 import paho.mqtt.client as mqtt
 
-from .protocol import build_read_query, decode_frame, topic_from
+from .protocol import build_read_query, build_zone_control, decode_cloud_points, decode_frame, topic_from
+from .const import STALE_SECONDS
 
 BASE = 'https://eu-api.topband-cloud.com/'
 
@@ -42,7 +44,8 @@ class Api:
     def call(self, path, *, form=None, params=None, authenticated=True):
         if self.opener is None:
             self.opener = build_opener(HTTPSHandler(context=ssl.create_default_context()), NoRedirect())
-        if not path.startswith('api/') or '..' in path or '://' in path:
+        allowed = path.startswith('api/') or path.startswith('apps/topiot_ferroli_temperature_controller/thermostat_points/')
+        if not allowed or '..' in path or '://' in path:
             raise CloudError('Invalid API path')
         headers = {'APPSLUG': APP_SLUG, 'Accept': 'application/json'}
         if authenticated:
@@ -112,6 +115,16 @@ class Client:
         self.api = Api(token)
         self.notify = notify
         self.lock = threading.Lock()
+        self.condition = threading.Condition(self.lock)
+        self.command_lock = threading.Lock()
+        self.command_targets = {}
+        self.cloud_targets = {}
+        self.cloud_reads = 0
+        self.cloud_errors = 0
+        self.cloud_stale = 0
+        self.commands_sent = 0
+        self.commands_confirmed = 0
+        self.commands_unconfirmed = 0
         self.zones = {}
         self.boilers = {}
         self.boiler_ids = {}
@@ -141,10 +154,15 @@ class Client:
             return {'connected': self.connected, 'received': self.received, 'invalid_frames': self.invalid,
                     'unassigned_frames': self.unassigned, 'zone_count': len(self.zones),
                     'boiler_count': len(self.boilers), 'read_queries_sent': self.queries_sent,
+                    'commands_sent': self.commands_sent, 'commands_confirmed': self.commands_confirmed,
+                    'commands_unconfirmed': self.commands_unconfirmed,
+                    'cloud_reads': self.cloud_reads, 'cloud_read_errors': self.cloud_errors,
+                    'cloud_stale_snapshots': self.cloud_stale,
                     'read_publish_errors': self.publish_errors,
                     'last_read_age_seconds': round(time.monotonic()-self.last_poll) if self.last_poll is not None else None,
                     'last_error': self.last_error,
                     'zones': [{'alias': f'zone_{i}', 'received': z['received'],
+                               'sources': sorted(set(z['field_sources'].values())),
                                'age_seconds': round(time.monotonic()-z['seen']) if z['seen'] else None}
                               for i, z in enumerate(self.zones.values(), 1)],
                     'boilers': [{'alias': f'boiler_{i}', 'received': b['received'],
@@ -167,6 +185,7 @@ class Client:
             client.loop_stop()
         with self.lock:
             self.connected = False
+            self.condition.notify_all()
 
     def start(self):
         self.stop()
@@ -176,6 +195,8 @@ class Client:
         credentials = self.api.call('api/mqtt/token', params={'app_slug': APP_SLUG})
         zones, identities, labels, topics = {}, {}, {}, {}
         boilers, boiler_ids, read_targets = {}, {}, []
+        command_targets = {}
+        cloud_targets = {}
         user, app = required(credentials, 'user_slug'), required(credentials, 'app_code')
         client_id = f'{time.time_ns()//1_000_000}_{user}$of${app}'
         topic_config = config.get('topic')
@@ -218,8 +239,11 @@ class Client:
                 name = child.get('name')
                 name = ''.join(c for c in name if c.isprintable())[:100] if isinstance(name, str) else ''
                 zones[uid] = {'name': name or f'Zona {index}', 'seen': 0.0, 'received': 0,
-                              'values': {}, 'value_times': {}}
+                              'values': {}, 'value_times': {}, 'mqtt_value_times': {}, 'mqtt_values': {}, 'field_sources': {}}
                 read_targets.append((request_topic, bytes.fromhex(sdid)))
+                command_targets[uid] = (request_topic, bytes.fromhex(sdid))
+                cloud_targets[uid] = ('apps/topiot_ferroli_temperature_controller/thermostat_points/'
+                                      +quote(code,safe='')+'/'+quote(sdid,safe=''))
             read_targets.append((request_topic, None))
             for key in ('DEV_REALT', 'FROM_DEV'):
                 try:
@@ -243,7 +267,8 @@ class Client:
                 old = self.zones.get(uid)
                 if old:
                     zone.update(seen=old['seen'], received=old['received'], values=old['values'],
-                                value_times=old['value_times'])
+                                value_times=old['value_times'], mqtt_value_times=old['mqtt_value_times'],
+                                mqtt_values=old['mqtt_values'], field_sources=old['field_sources'])
             self.zones, self.identities, self.labels, self.topics = zones, identities, labels, topics
             for uid, boiler in boilers.items():
                 if uid in self.boilers:
@@ -251,6 +276,8 @@ class Client:
                     boiler.update(seen=old['seen'], received=old['received'], values=old['values'],
                                   value_times=old['value_times'])
             self.boilers, self.boiler_ids, self.read_targets = boilers, boiler_ids, read_targets
+            self.command_targets = command_targets
+            self.cloud_targets = cloud_targets
             self.last_poll = None
             self.last_error = None
 
@@ -285,6 +312,7 @@ class Client:
             with self.lock:
                 self.connected = False
                 self.last_error = 'mqtt_disconnected'
+                self.condition.notify_all()
             failure.append('mqtt_disconnected')
             ready.set()
             self.notify()
@@ -320,8 +348,7 @@ class Client:
         for topic, thermostat_id in targets:
             if generation != self._generation:
                 return
-            self.message_sequence = (self.message_sequence+1) % 256
-            payload = build_read_query(thermostat_id, self.message_sequence)
+            payload = build_read_query(thermostat_id, self.next_sequence())
             try:
                 info = client.publish(topic, payload=payload, qos=1, retain=False)
                 if info.rc != mqtt.MQTT_ERR_SUCCESS:
@@ -333,9 +360,123 @@ class Client:
                 with self.lock:
                     self.publish_errors += 1
                     self.last_error = 'read_request_failed'
-                raise CloudError('Read request delivery failed') from None
+                continue  # One failed target must not prevent reading the other zone.
             with self.lock:
                 self.queries_sent += 1
+        self.read_cloud_snapshots()
+
+    def read_cloud_snapshots(self):
+        """Read each zone's points, just as the app does. Never refresh old cache."""
+        for uid, path in list(self.cloud_targets.items()):
+            try:
+                points = self.api.call(path)
+                timestamp_ms, values = decode_cloud_points(points)
+                age = time.time()-timestamp_ms/1000
+                if timestamp_ms < 946684800000 or age < -30 or age >= STALE_SECONDS:
+                    with self.lock:
+                        self.cloud_stale += 1
+                    continue
+                observed_at = time.monotonic()-max(0, age)
+                with self.lock:
+                    zone = self.zones.get(uid)
+                    if zone is None:
+                        continue
+                    self.cloud_reads += 1
+                    for key, value in values.items():
+                        if observed_at > zone['value_times'].get(key, float('-inf')):
+                            zone['values'][key] = value
+                            zone['value_times'][key] = observed_at
+                            zone['field_sources'][key] = 'cloud_snapshot'
+            except AuthError:
+                raise
+            except (CloudError, ValueError, TypeError):
+                with self.lock:
+                    self.cloud_errors += 1
+        self.notify()
+
+    def next_sequence(self):
+        with self.lock:
+            self.message_sequence = (self.message_sequence+1) % 256
+            return self.message_sequence
+
+    def write_zone(self, uid, *, temperature=None, mode=None, timeout=20):
+        """Executor-only. Send once, then require fresh zone-specific telemetry."""
+        with self.command_lock:
+            with self.lock:
+                zone = self.zones.get(uid)
+                if not self.connected or zone is None or uid not in self.command_targets:
+                    raise CloudError('Zona non collegata')
+                now = time.monotonic()
+                def fresh(key):
+                    return key in zone['values'] and key in zone['value_times'] and now-zone['value_times'][key] < STALE_SECONDS
+                if not fresh('modalita'):
+                    raise CloudError('Attendi la lettura aggiornata della modalità')
+                if mode is not None and (type(mode) is not int or mode not in (0, 1, 4)):
+                    raise CloudError('Modalità non supportata')
+                expected = {}
+                current = zone['values']['modalita']
+                target_mode = mode if mode is not None else {'automatico': 0, 'manuale': 1, 'spento': 4}.get(current)
+                temporary = False
+                if mode is not None:
+                    expected['modalita'] = {0: 'automatico', 1: 'manuale', 4: 'spento'}[mode]
+                    if mode == 0 and temperature is None:
+                        expected['override_attivo'] = False
+                if temperature is not None:
+                    if not fresh('unita_temperatura') or zone['values']['unita_temperatura'] != 0:
+                        raise CloudError('Scrittura disponibile solo con unità Celsius confermata')
+                    if not fresh('limite_minimo') or not fresh('limite_massimo'):
+                        raise CloudError('Attendi i limiti di temperatura del termostato')
+                    low, high = zone['values']['limite_minimo'], zone['values']['limite_massimo']
+                    if (type(temperature) not in (int, float) or not math.isfinite(temperature)
+                        or not low <= temperature <= high or abs(temperature*2-round(temperature*2)) > 0.00001):
+                        raise CloudError('Temperatura fuori dai limiti o dal passo di 0,5 °C')
+                    if target_mode not in (0, 1):
+                        raise CloudError('Seleziona Manuale o Automatico prima di impostare la temperatura')
+                    temporary = target_mode == 0
+                    expected['temperatura_temporanea' if temporary else 'temperatura_manuale'] = float(temperature)
+                    if temporary:
+                        expected['override_attivo'] = True
+                if not expected:
+                    raise CloudError('Nessuna modifica richiesta')
+                topic, thermostat_id = self.command_targets[uid]
+                client, generation = self.client, self._generation
+            payload = build_zone_control(thermostat_id, self.next_sequence(), mode=mode,
+                                         temperature=temperature, temporary=temporary)
+            sent_at = time.monotonic()
+            try:
+                # QoS 0 prevents replay of a control after a reconnect. The
+                # application-level response, not PUBACK, establishes success.
+                info = client.publish(topic, payload=payload, qos=0, retain=False)
+                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                    raise CloudError('Invio comando non riuscito')
+                info.wait_for_publish(timeout=5)
+                if not info.is_published():
+                    raise CloudError('Consegna comando non confermata')
+                with self.lock:
+                    self.commands_sent += 1
+                # Separate verification query; never resend the control itself.
+                query = build_read_query(thermostat_id, self.next_sequence())
+                query_info = client.publish(topic, payload=query, qos=1, retain=False)
+                if query_info.rc == mqtt.MQTT_ERR_SUCCESS:
+                    with self.lock:
+                        self.queries_sent += 1
+            except Exception:
+                with self.lock:
+                    self.commands_unconfirmed += 1
+                raise CloudError('Invio non confermato: verifica lo stato nell’app prima di riprovare') from None
+
+            def confirmed():
+                state = self.zones.get(uid)
+                return bool(state and all(state['mqtt_values'].get(key) == value
+                            and state['mqtt_value_times'].get(key, 0) >= sent_at for key, value in expected.items()))
+            with self.condition:
+                self.condition.wait_for(lambda: confirmed() or not self.connected or generation != self._generation,
+                                        timeout=timeout)
+                if self.connected and generation == self._generation and confirmed():
+                    self.commands_confirmed += 1
+                    return
+                self.commands_unconfirmed += 1
+            raise CloudError('Il dispositivo non ha confermato la modifica: verifica nell’app, potrebbe essere stata applicata')
 
     def receive(self, topic, payload, retained=False):
         gateway = self.topics.get(topic)
@@ -374,6 +515,11 @@ class Client:
                         continue
                     zone['values'][field['nome']] = field['valore']
                     zone['value_times'][field['nome']] = time.monotonic()
+                    if uid is not None:
+                        zone['mqtt_value_times'][field['nome']] = zone['value_times'][field['nome']]
+                        zone['mqtt_values'][field['nome']] = field['valore']
+                        zone['field_sources'][field['nome']] = 'mqtt'
+            self.condition.notify_all()
         self.notify()
 
 # Public application identifier from Android initServer; not a user secret.

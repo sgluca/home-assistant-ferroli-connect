@@ -3,8 +3,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Ferroli Connect — zone readings",
-        "description": "Sign in to Ferroli Connect. Only the session token is saved. Experimental read-only version.",
+        "title": "Ferroli Connect — thermostats and sensors",
+        "description": "Sign in to Ferroli Connect. Only the session token is saved. Experimental readings and climate controls.",
         "data": {
           "username": "Ferroli email / account",
           "password": "Password"

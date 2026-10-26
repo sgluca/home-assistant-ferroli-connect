@@ -1,8 +1,8 @@
 # Ferroli Connect for Home Assistant
 
-Unofficial, experimental **read-only** integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone is represented by a separate Home Assistant device, using its cloud name. A separate device represents the boiler connected to each receiver.
+Unofficial, experimental Home Assistant integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone has a separate device, sensors and a `climate` entity. A separate device represents boiler status.
 
-**Stato attuale:** ricezione e distinzione di due zone verificate su un impianto. La versione **0.2.0** aggiunge richieste automatiche di lettura e stato del relè caldaia: queste nuove funzioni hanno superato i test simulati e richiedono ancora verifica sull'impianto. Nessun comando di temperatura o modalità. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
+**Stato attuale:** ricezione e distinzione di due zone verificate su un impianto. La **0.3.0** aggiunge `climate`, comandi delle zone e letture HTTPS supplementari per i valori mancanti. Queste nuove funzioni hanno superato test simulati e richiedono ancora verifica sull'impianto. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
 
 ## Installazione con HACS
 
@@ -10,7 +10,7 @@ Richiede Home Assistant **2026.10 o successivo** e accesso all'account Ferroli C
 
 1. Apri HACS, seleziona il menu e **Repository personalizzati**.
 2. Aggiungi `https://github.com/sgluca/home-assistant-ferroli-connect` con categoria **Integrazione**.
-3. Cerca **Ferroli Connect**, scaricala e riavvia Home Assistant.
+3. Cerca **Ferroli Connect**, abilita le versioni beta, seleziona la versione desiderata e riavvia Home Assistant.
 4. Apri **Impostazioni → Dispositivi e servizi → Aggiungi integrazione → Ferroli Connect**.
 5. Inserisci account e password nella schermata di Home Assistant.
 
@@ -31,11 +31,27 @@ Per ciascuna zona, quando presenti nella telemetria:
 
 Per la caldaia espone **Relè caldaia attivo**, **Collegamento caldaia** (`on_off` / `opentherm`) e **OpenTherm connesso**, se il dispositivo restituisce questi dati. Lo stato del relè rappresenta il contatto del ricevitore e non conferma che la fiamma sia accesa. Con collegamento ON/OFF temperature interne e pressione della caldaia potrebbero non essere disponibili; questa versione non le espone e non le deduce dalle zone.
 
-Non crea ancora entità `climate`. L'app ufficiale continua a essere usata per i comandi. Non richiede un broker MQTT locale, modifiche al router o una nuova associazione dei termostati.
+I sensori esistenti sono mantenuti. Non richiede un broker MQTT locale, modifiche al router o una nuova associazione dei termostati.
+
+### Entità climate e scritture delle zone
+
+Ogni zona espone un termostato `climate` con temperatura ambiente e obiettivo. Le modalità sono **Heat = Manuale**, **Auto = programma automatico** e **Off = spento del termostato**; Off non equivale necessariamente a disalimentare la caldaia o disattivare l'antigelo.
+
+- In Manuale la temperatura modifica il setpoint manuale.
+- In Automatico la temperatura imposta una modifica temporanea, senza riscrivere il programma settimanale.
+- Selezionare esplicitamente Auto annulla la modifica temporanea e torna al programma.
+- Da Off scegli Manuale/Automatico prima di cambiare temperatura, oppure specifica insieme temperatura e modalità nell'azione di Home Assistant.
+- Il comando di accensione sceglie Manuale. Non sono esposti comandi di scrittura per la caldaia, gli installatori o i programmi.
+
+Le temperature sono accettate solo in Celsius, con passo 0,5 °C, entro i limiti effettivamente letti dal termostato. Se modalità, unità o limiti non sono disponibili o sono vecchi, la scrittura viene rifiutata. Non vengono eseguiti comandi all'avvio, al ripristino dello stato o alla riconnessione.
+
+Ogni comando è inviato una sola volta, senza retained o ritrasmissione dopo una riconnessione, e viene seguito da una richiesta di lettura. Il successo richiede valori ricevuti via MQTT dalla stessa zona dopo l'invio, entro 20 secondi: una conferma di trasporto o la cache HTTPS non bastano. L'interfaccia non anticipa il valore desiderato. Un timeout può significare che la modifica è stata applicata ma non confermata: controlla l'app prima di riprovare.
 
 ### Aggiornamento con l'app chiusa
 
-Dopo la conferma delle sottoscrizioni MQTT richiede lo stato di ciascuna zona e della caldaia. Ripete la lettura ogni **120 secondi** e dopo una riconnessione. Pubblica esclusivamente pacchetti Topband **QUERY (tipo 1)**, sul topic specifico restituito dal cloud, senza messaggi retained. Non invia pacchetti CONTROL o DELETE e non modifica setpoint, modalità o programmi. La conferma di consegna MQTT non equivale a una risposta del dispositivo: le entità diventano disponibili solo quando arriva telemetria valida.
+Dopo la conferma delle sottoscrizioni MQTT richiede lo stato di ciascuna zona e della caldaia. Ripete la lettura ogni **120 secondi** e dopo una riconnessione. Le richieste periodiche sono pacchetti Topband QUERY, senza retained. Solo un'azione esplicita su `climate` invia un pacchetto CONTROL di zona; non esiste un comando DELETE.
+
+La lettura HTTPS `thermostat_points/{wifi_box_code}/{sdid}`, usata anche dall'app, integra i campi mancanti separatamente per ogni zona. I valori sono stringhe esadecimali; campi assenti o non validi non diventano zero. La cache viene accettata solo con timestamp valido e recente, senza sovrascrivere telemetria MQTT più nuova. La sua età è riferita allo snapshot del cloud: il servizio non fornisce qui un timestamp per ogni singolo campo. Un errore o una mancata risposta di una zona non interrompe le letture dell'altra.
 
 Se un valore non viene aggiornato per dieci minuti, diventa non disponibile. La freschezza è verificata per ciascun valore: un aggiornamento del setpoint non rende recente la temperatura ambiente. I messaggi MQTT retained e le eventuali copie delle richieste QUERY non vengono usati come letture.
 
@@ -53,13 +69,17 @@ La diagnostica scaricabile dalla pagina dell'integrazione include soltanto conte
 
 ## Limiti della beta
 
-- Nessuna modifica di setpoint, modalità o programmi, e nessun controllo locale.
+- Nessun controllo locale e nessuna modifica di programmi, parametri installatore o comandi caldaia.
 - Le nuove interrogazioni sono ricostruite dal percorso di lettura dell'app 1.5.2; la risposta effettiva del gateway ad app chiusa va verificata sul tuo firmware.
 - Le temperature sono supportate in Celsius; se viene segnalata l'unità Fahrenheit diventano non disponibili.
 - Il flag di richiesta riscaldamento non dimostra che la fiamma della caldaia sia accesa.
 - Zone con SDID assente, non valido o duplicato bloccano l'avvio; dopo modifiche all'elenco delle zone ricarica l'integrazione.
 - Il token HTTP viene rinnovato ogni trenta minuti; un accesso rifiutato richiede nuova autenticazione. I tentativi di riconnessione MQTT sono distanziati di almeno due minuti.
 - I test automatici verificano protocollo e trasporto simulato. Non equivalgono a una prova completa in Home Assistant o su ogni firmware.
+
+## Verifica consigliata della beta
+
+Chiudi l'app e verifica prima le letture di entrambe le zone per almeno due cicli (circa quattro minuti). Poi, su una sola zona in Manuale, modifica il setpoint di 0,5 °C e controlla nell'app e sul termostato che sia cambiata soltanto quella zona; ripristina il valore iniziale. Verifica separatamente Automatico e la modifica temporanea. Le scritture sono sperimentali finché non sono state provate sul tuo firmware.
 
 ## Sviluppo e test
 

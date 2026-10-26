@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0
+
+- Un'entità `climate` per ogni zona, mantenendo tutti i sensori precedenti.
+- Comandi Manuale, Automatico e Off, temperatura manuale e modifica temporanea in Automatico, con limiti e passo verificati.
+- Conferma dei comandi tramite nuova telemetria MQTT della zona interessata; nessuno stato ottimistico e nessuna ripetizione automatica dei controlli.
+- Letture HTTPS supplementari dei punti di ciascuna zona, con controlli sul timestamp della cache e priorità ai dati MQTT più nuovi.
+- Una zona che non risponde non interrompe la lettura delle altre.
+- Test sui comandi e sull'adattatore climate, protezioni GitHub, CODEOWNERS e aggiornamenti Dependabot documentati.
+- Scritture e lettura completa ad app chiusa da validare sul dispositivo reale.
+
 ## 0.2.0
 
 - Aggiunte richieste di lettura delle zone all'avvio, dopo la conferma delle sottoscrizioni, e ogni 120 secondi.
