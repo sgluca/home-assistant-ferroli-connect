@@ -4,6 +4,8 @@
 
 <p align="center">Creato da <a href="https://github.com/sgluca">sgluca</a></p>
 
+<p align="center"><a href="https://ko-fi.com/sgluca"><img src="https://img.shields.io/badge/Ko--fi-Offrimi_un_caff%C3%A8-FF5E5B?logo=kofi&amp;logoColor=white" alt="Offrimi un caffè su Ko-fi"></a></p>
+
 Unofficial Home Assistant integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone has a separate device, sensors and a `climate` entity. A separate device represents boiler status.
 
 **Versione stabile: 1.0.0.** Letture delle due zone, aggiornamento ad app chiusa, stato caldaia e comandi di temperatura/modalità confermati dall’utente sul proprio impianto durante le prove delle versioni 0.3.x. La compatibilità con altri impianti e firmware va verificata. Non è un’integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
@@ -107,6 +109,10 @@ python -m unittest discover -s tests -v
 ```
 
 I test non richiedono account Ferroli o accesso ai dispositivi. La pipeline esegue anche controlli di sintassi Python e metadati JSON. Include una regressione per evitare il caricamento bloccante dei certificati TLS durante la costruzione del client nel ciclo principale di Home Assistant.
+
+## Sostieni il progetto
+
+Se l’integrazione ti è utile, puoi [offrire un caffè a sgluca su Ko-fi](https://ko-fi.com/sgluca) per sostenere lo sviluppo e la manutenzione. Il contributo è facoltativo: tutte le funzionalità restano disponibili gratuitamente.
 
 ## Riferimenti
 
