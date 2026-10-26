@@ -1,4 +1,4 @@
-"""Experimental Ferroli Connect integration."""
+"""Unofficial Ferroli Connect integration."""
 from homeassistant.const import Platform
 
 from .coordinator import FerroliCoordinator

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0
+
+- Prima release stabile, dopo conferma dell’utente su letture e comandi dell’impianto a due zone.
+- Un termostato climate per zona, controllo temperatura e modalità, sensori delle zone e stato caldaia, con l’app ufficiale utilizzabile.
+- Include la correzione dei limiti 0/0 della 0.3.2 e le letture sequenziali per le zone.
+- Nuova icona con monogramma **SL**, firma di **sgluca**.
+- Installazione da HACS senza abilitare le beta; aggiornamento dalla 0.3.2 senza ricreare l’integrazione.
+- Compatibilità verificata su un impianto; altri firmware e funzionamento a lungo termine restano da osservare.
+
 ## 0.3.2
 
 - Corretti i pulsanti +/− quando il ricevitore restituisce minimo = massimo = 0: il valore veniva vincolato a zero e inviato al dispositivo. In questo caso si usa ora l’intervallo 5–35 °C del controllo manuale/automatico dell’app ufficiale, anche per validare i comandi. I limiti validi ricevuti restano prioritari; altre coppie incoerenti bloccano la scrittura.

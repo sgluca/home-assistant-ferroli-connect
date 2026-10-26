@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Ferroli Connect — termostati e sensori",
-        "description": "Accedi al tuo account Ferroli Connect. Viene conservato il token, non la password. Letture e comandi climate sperimentali.",
+        "description": "Accedi al tuo account Ferroli Connect. Viene conservato il token, non la password. Letture delle zone e controllo dei termostati.",
         "data": {
           "username": "Email / account Ferroli",
           "password": "Password"

@@ -1,8 +1,12 @@
 # Ferroli Connect for Home Assistant
 
-Unofficial, experimental Home Assistant integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone has a separate device, sensors and a `climate` entity. A separate device represents boiler status.
+<p align="center"><img src="custom_components/ferroli_connect/brand/icon@2x.png" width="160" alt="Ferroli Connect — firma SL di sgluca"></p>
 
-**Stato attuale:** ricezione, distinzione e aggiornamento delle due zone e stato caldaia confermati dall’utente con la **0.3.1** su un impianto. Le entità `climate` e i comandi delle zone sono disponibili dalla **0.3.0**: le scritture hanno superato test simulati e richiedono ancora verifica sull’impianto. Non è un'integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
+<p align="center">Creato da <a href="https://github.com/sgluca">sgluca</a></p>
+
+Unofficial Home Assistant integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone has a separate device, sensors and a `climate` entity. A separate device represents boiler status.
+
+**Versione stabile: 1.0.0.** Letture delle due zone, aggiornamento ad app chiusa, stato caldaia e comandi di temperatura/modalità confermati dall’utente sul proprio impianto durante le prove delle versioni 0.3.x. La compatibilità con altri impianti e firmware va verificata. Non è un’integrazione ufficiale Ferroli e non è inclusa nel catalogo predefinito HACS.
 
 ## Installazione con HACS
 
@@ -10,7 +14,7 @@ Richiede Home Assistant **2026.10 o successivo** e accesso all'account Ferroli C
 
 1. Apri HACS, seleziona il menu e **Repository personalizzati**.
 2. Aggiungi `https://github.com/sgluca/home-assistant-ferroli-connect` con categoria **Integrazione**.
-3. Cerca **Ferroli Connect**, abilita le versioni beta, seleziona la versione desiderata e riavvia Home Assistant.
+3. Cerca **Ferroli Connect**, seleziona la versione stabile più recente e riavvia Home Assistant.
 4. Apri **Impostazioni → Dispositivi e servizi → Aggiungi integrazione → Ferroli Connect**.
 5. Inserisci account e password nella schermata di Home Assistant.
 
@@ -61,7 +65,7 @@ Se un valore non viene aggiornato per dieci minuti, diventa non disponibile. La 
 
 L'integrazione usa il cloud europeo Topband tramite HTTPS per la sessione, l'inventario e la configurazione MQTT; riceve quindi la telemetria mediante MQTT con TLS verificato. Distingue le zone confrontando il campo binario `0x0017` con `child_devices.sdid` del cloud, come l'app Android. Gli ID mancanti, duplicati o non riconosciuti non vengono attribuiti a un'altra zona.
 
-Il client MQTT ha un identificativo separato dall'app. La convivenza in ascolto passivo è stata verificata durante brevi prove; il funzionamento con letture automatiche, le riconnessioni e il rinnovo del token richiedono ancora validazione sul servizio reale. Non si tratta di un'integrazione locale: serve la disponibilità del cloud.
+Il client MQTT ha un identificativo separato dall'app. La convivenza con l’app e le letture automatiche sono state confermate sull’impianto usato per le prove. Il comportamento a lungo termine delle riconnessioni e del rinnovo del token richiede ulteriore osservazione. Non si tratta di un'integrazione locale: serve la disponibilità del cloud.
 
 ## Credenziali e diagnostica
 
@@ -71,7 +75,7 @@ La diagnostica scaricabile dalla pagina dell'integrazione include soltanto conte
 
 Per ogni zona la diagnostica 0.3.1 include anche l'elenco dei campi riconosciuti (senza valori), richieste, risposte correlate, timeout e l'esito della lettura HTTPS. Consente di distinguere una risposta MQTT mancante da una cache vecchia o da un errore HTTP, senza pubblicare identificativi o credenziali.
 
-## Limiti della beta
+## Compatibilità e limiti
 
 - Nessun controllo locale e nessuna modifica di programmi, parametri installatore o comandi caldaia.
 - Le nuove interrogazioni sono ricostruite dal percorso di lettura dell'app 1.5.2; la risposta effettiva del gateway ad app chiusa va verificata sul tuo firmware.
@@ -81,7 +85,7 @@ Per ogni zona la diagnostica 0.3.1 include anche l'elenco dei campi riconosciuti
 - Il token HTTP viene rinnovato ogni trenta minuti; un accesso rifiutato richiede nuova autenticazione. I tentativi di riconnessione MQTT sono distanziati di almeno due minuti.
 - I test automatici verificano protocollo e trasporto simulato. Non equivalgono a una prova completa in Home Assistant o su ogni firmware.
 
-## Verifica consigliata della beta
+## Verifica dopo l’installazione
 
 I comandi sono nell’entità **Termostato** (`climate`) di ciascuna zona, accessibile da **Impostazioni → Dispositivi e servizi → Ferroli Connect → dispositivo della zona**. Apri l’entità per mostrare i controlli della temperatura; i sensori separati continuano a essere di sola lettura.
 
@@ -91,7 +95,7 @@ I comandi sono nell’entità **Termostato** (`climate`) di ciascuna zona, acces
 4. Ripeti separatamente sulla zona notte, verificando che la zona giorno mantenga il proprio valore.
 5. Prova in seguito **Auto**: la temperatura crea una modifica temporanea; selezionando di nuovo Auto si torna al programma. Se inizialmente la zona seguiva il programma, riporta la modalità su Auto a fine prova.
 
-Se appare un errore di mancata conferma, controlla lo stato nell’app prima di ripetere il comando: il dispositivo potrebbe averlo applicato. Le scritture sono sperimentali finché non sono state provate sul tuo firmware.
+Se appare un errore di mancata conferma, controlla lo stato nell’app prima di ripetere il comando: il dispositivo potrebbe averlo applicato. Le scritture sono state confermate sull’impianto delle prove; verifica il comportamento anche sul tuo firmware.
 
 La 0.3.2 rinomina il sensore in **Caldaia accesa** mantenendo il suo identificativo. Se gli avevi assegnato un nome personalizzato in Home Assistant, quel nome resta: puoi modificarlo nelle impostazioni dell’entità.
 
