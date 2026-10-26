@@ -1,9 +1,9 @@
-"""Experimental Ferroli Connect read-only integration."""
+"""Experimental Ferroli Connect integration."""
 from homeassistant.const import Platform
 
 from .coordinator import FerroliCoordinator
 
-PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR]
+PLATFORMS = [Platform.SENSOR, Platform.BINARY_SENSOR, Platform.CLIMATE]
 
 
 async def async_setup_entry(hass, entry):

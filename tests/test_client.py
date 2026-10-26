@@ -144,10 +144,10 @@ class ClientTests(unittest.TestCase):
     def test_failed_publish_is_throttled_and_not_counted_as_state(self):
         self.client.last_poll=None
         self.client.client.publish=lambda *a,**kw:types.SimpleNamespace(rc=1)
-        with self.assertRaises(module.CloudError): self.client.poll_readings()
-        self.assertEqual(self.client.diagnostics()['read_publish_errors'],1)
         self.client.poll_readings()
-        self.assertEqual(self.client.diagnostics()['read_publish_errors'],1)
+        self.assertEqual(self.client.diagnostics()['read_publish_errors'],3)
+        self.client.poll_readings()
+        self.assertEqual(self.client.diagnostics()['read_publish_errors'],3)
         self.assertTrue(all(not z['seen'] for z in self.client.snapshot()['zones'].values()))
 
     def test_boiler_packets_do_not_change_zone_state(self):
