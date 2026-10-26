@@ -4,7 +4,7 @@
 
 <p align="center">Creato da <a href="https://github.com/sgluca">sgluca</a></p>
 
-<p align="center"><a href="https://ko-fi.com/sgluca"><img src="https://img.shields.io/badge/Ko--fi-Offrimi_un_caff%C3%A8-FF5E5B?logo=kofi&amp;logoColor=white" alt="Offrimi un caffè su Ko-fi"></a></p>
+<p align="center"><a href="https://ko-fi.com/sgluca"><img height="36" src="https://storage.ko-fi.com/cdn/kofi5.png?v=6" alt="Offrimi un caffè su Ko-fi"></a></p>
 
 Unofficial Home Assistant integration for thermostats controlled by the **Ferroli CONNECT** app (`com.szacs.ferroliconnect`). Each zone has a separate device, sensors and a `climate` entity. A separate device represents boiler status.
 
