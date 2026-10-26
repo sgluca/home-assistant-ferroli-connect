@@ -7,7 +7,7 @@ from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.exceptions import HomeAssistantError
 
 from .client import CloudError
-from .const import STALE_SECONDS
+from .const import STALE_SECONDS, valid_temperature_limits
 from .entity import FerroliEntity
 
 MODE_TO_CODE = {HVACMode.OFF: 4, HVACMode.HEAT: 1, HVACMode.AUTO: 0}
@@ -69,13 +69,17 @@ class FerroliClimate(FerroliEntity, ClimateEntity):
 
     @property
     def min_temp(self):
-        value = self.fresh_value('limite_minimo')
-        return value if value is not None else 5.0
+        low, high = self.temperature_limits
+        return low if valid_temperature_limits(low, high) else 5.0
 
     @property
     def max_temp(self):
-        value = self.fresh_value('limite_massimo')
-        return value if value is not None else 35.0
+        low, high = self.temperature_limits
+        return high if valid_temperature_limits(low, high) else 35.0
+
+    @property
+    def temperature_limits(self):
+        return self.fresh_value('limite_minimo'), self.fresh_value('limite_massimo')
 
     @property
     def extra_state_attributes(self):

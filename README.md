@@ -43,7 +43,7 @@ Ogni zona espone un termostato `climate` con temperatura ambiente e obiettivo. L
 - Da Off scegli Manuale/Automatico prima di cambiare temperatura, oppure specifica insieme temperatura e modalità nell'azione di Home Assistant.
 - Il comando di accensione sceglie Manuale. Non sono esposti comandi di scrittura per la caldaia, gli installatori o i programmi.
 
-Le temperature sono accettate solo in Celsius, con passo 0,5 °C, entro i limiti effettivamente letti dal termostato. Se modalità, unità o limiti non sono disponibili o sono vecchi, la scrittura viene rifiutata. Non vengono eseguiti comandi all'avvio, al ripristino dello stato o alla riconnessione.
+Le temperature sono accettate solo in Celsius, con passo 0,5 °C, entro i limiti effettivamente letti dal termostato. Se modalità, unità o limiti non sono disponibili o sono vecchi, la scrittura viene rifiutata. Anche limiti uguali, invertiti o non finiti bloccano il comando. In questi casi il pannello visualizza provvisoriamente 5–35 °C per evitare che i pulsanti siano vincolati a zero: questo intervallo di visualizzazione non autorizza la scrittura. Non vengono eseguiti comandi all'avvio, al ripristino dello stato o alla riconnessione.
 
 Ogni comando è inviato una sola volta, senza retained o ritrasmissione dopo una riconnessione, e viene seguito da una richiesta di lettura. Il successo richiede valori ricevuti via MQTT dalla stessa zona dopo l'invio, entro 20 secondi: una conferma di trasporto o la cache HTTPS non bastano. L'interfaccia non anticipa il valore desiderato. Un timeout può significare che la modifica è stata applicata ma non confermata: controlla l'app prima di riprovare.
 

@@ -107,3 +107,13 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(values['modalita'],'manuale')
         self.assertEqual(values['temperatura_manuale'],20)
         self.assertNotIn('PRIVATE',json.dumps(self.client.diagnostics()))
+
+    def test_invalid_limit_pairs_reject_even_zero_without_sending(self):
+        uid = self.prepare_zone()
+        for low, high in [(0, 0), (30, 5), (float('nan'), 30), (5, float('inf'))]:
+            self.client.zones[uid]['values'].update(limite_minimo=low, limite_massimo=high)
+            for temperature in (0, 21.5):
+                with self.subTest(low=low, high=high, temperature=temperature):
+                    with self.assertRaisesRegex(module.CloudError, 'Limiti di temperatura non validi'):
+                        self.client.write_zone(uid, temperature=temperature, timeout=0)
+        self.assertFalse(any(p[1][:2] == b'\x00\x02' for p in self.client.client.published))

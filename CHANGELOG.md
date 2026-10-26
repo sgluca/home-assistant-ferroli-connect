@@ -2,6 +2,8 @@
 
 ## 0.3.2
 
+- Corretto il caso di limiti uguali o invertiti (incluso minimo = massimo = 0): il pannello usa un intervallo di visualizzazione valido e le scritture vengono rifiutate finché non arrivano limiti coerenti. La causa della segnalazione reale è ancora da confermare tramite gli attributi dell’entità.
+
 - L'entità **Caldaia accesa** perde il suffisso “(app)”, mantenendo identificativo e significato dello stato.
 - Aggiunte istruzioni per provare i comandi di temperatura sulle due zone tramite le entità Termostato, già disponibili dalla 0.3.0.
 - Aggiornamento delle letture e stato caldaia confermati dall'utente sull'impianto a due zone con la 0.3.1; scritture ancora da verificare sul dispositivo reale.

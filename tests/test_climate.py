@@ -95,3 +95,11 @@ class ClimateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'fixture no confirmation'):
             asyncio.run(self.entity.async_set_temperature(temperature=22))
         self.assertEqual(self.entity.target_temperature,21)
+
+    def test_invalid_limits_cannot_clamp_dashboard_to_zero(self):
+        for low, high in [(0, 0), (30, 5), (float('nan'), 30), (5, float('inf'))]:
+            with self.subTest(low=low, high=high):
+                self.zone['values'].update(limite_minimo=low, limite_massimo=high)
+                self.assertEqual(self.entity.min_temp, 5)
+                self.assertEqual(self.entity.max_temp, 35)
+                self.assertEqual(self.entity.target_temperature, 21)
