@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Aggiunta **Caldaia accesa (app)** con il significato usato dall'app ufficiale: `1` = spenta, `2` = accesa. Il contatto grezzo del relè resta distinto; l'entità precedente non viene invertita silenziosamente.
+- Richieste delle zone sequenziali, con attesa limitata e correlazione di zona e progressivo, invece di invii ravvicinati dopo la sola conferma del broker.
+- Diagnostica per zona con campi presenti, richieste, risposte correlate, timeout ed esito HTTPS, senza valori o ID reali.
+- Il problema di aggiornamento completo della zona Slave richiede ancora una prova sul dispositivo reale.
+
 ## 0.3.0
 
 - Un'entità `climate` per ogni zona, mantenendo tutti i sensori precedenti.

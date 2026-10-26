@@ -111,7 +111,7 @@ def required(data, key):
 
 
 class Client:
-    def __init__(self, token, notify):
+    def __init__(self, token, notify, *, read_reply_timeout=8):
         self.api = Api(token)
         self.notify = notify
         self.lock = threading.Lock()
@@ -122,6 +122,9 @@ class Client:
         self.cloud_reads = 0
         self.cloud_errors = 0
         self.cloud_stale = 0
+        self.read_reply_timeout = read_reply_timeout
+        self.read_target_uids = {}
+        self.pending_reads = {}
         self.commands_sent = 0
         self.commands_confirmed = 0
         self.commands_unconfirmed = 0
@@ -163,6 +166,11 @@ class Client:
                     'last_error': self.last_error,
                     'zones': [{'alias': f'zone_{i}', 'received': z['received'],
                                'sources': sorted(set(z['field_sources'].values())),
+                               'available_fields': sorted(z['field_sources']),
+                               'read_requests': z.get('read_requests', 0),
+                               'read_replies': z.get('read_replies', 0),
+                               'read_timeouts': z.get('read_timeouts', 0),
+                               'last_cloud_result': z.get('last_cloud_result', 'not_attempted'),
                                'age_seconds': round(time.monotonic()-z['seen']) if z['seen'] else None}
                               for i, z in enumerate(self.zones.values(), 1)],
                     'boilers': [{'alias': f'boiler_{i}', 'received': b['received'],
@@ -185,6 +193,7 @@ class Client:
             client.loop_stop()
         with self.lock:
             self.connected = False
+            self.pending_reads.clear()
             self.condition.notify_all()
 
     def start(self):
@@ -197,6 +206,7 @@ class Client:
         boilers, boiler_ids, read_targets = {}, {}, []
         command_targets = {}
         cloud_targets = {}
+        read_target_uids = {}
         user, app = required(credentials, 'user_slug'), required(credentials, 'app_code')
         client_id = f'{time.time_ns()//1_000_000}_{user}$of${app}'
         topic_config = config.get('topic')
@@ -241,10 +251,12 @@ class Client:
                 zones[uid] = {'name': name or f'Zona {index}', 'seen': 0.0, 'received': 0,
                               'values': {}, 'value_times': {}, 'mqtt_value_times': {}, 'mqtt_values': {}, 'field_sources': {}}
                 read_targets.append((request_topic, bytes.fromhex(sdid)))
+                read_target_uids[(request_topic, bytes.fromhex(sdid))] = uid
                 command_targets[uid] = (request_topic, bytes.fromhex(sdid))
                 cloud_targets[uid] = ('apps/topiot_ferroli_temperature_controller/thermostat_points/'
                                       +quote(code,safe='')+'/'+quote(sdid,safe=''))
             read_targets.append((request_topic, None))
+            read_target_uids[(request_topic, None)] = boiler_uid
             for key in ('DEV_REALT', 'FROM_DEV'):
                 try:
                     topics[topic_from(incoming.get(key), values)] = gateway
@@ -269,6 +281,9 @@ class Client:
                     zone.update(seen=old['seen'], received=old['received'], values=old['values'],
                                 value_times=old['value_times'], mqtt_value_times=old['mqtt_value_times'],
                                 mqtt_values=old['mqtt_values'], field_sources=old['field_sources'])
+                    for key in ('read_requests','read_replies','read_timeouts','last_cloud_result','last_query_response'):
+                        if key in old:
+                            zone[key] = old[key]
             self.zones, self.identities, self.labels, self.topics = zones, identities, labels, topics
             for uid, boiler in boilers.items():
                 if uid in self.boilers:
@@ -278,6 +293,7 @@ class Client:
             self.boilers, self.boiler_ids, self.read_targets = boilers, boiler_ids, read_targets
             self.command_targets = command_targets
             self.cloud_targets = cloud_targets
+            self.read_target_uids = read_target_uids
             self.last_poll = None
             self.last_error = None
 
@@ -348,7 +364,13 @@ class Client:
         for topic, thermostat_id in targets:
             if generation != self._generation:
                 return
-            payload = build_read_query(thermostat_id, self.next_sequence())
+            uid = self.read_target_uids[(topic, thermostat_id)]
+            collection = self.zones if thermostat_id is not None else self.boilers
+            sent_at = time.monotonic()
+            sequence = self.next_sequence()
+            payload = build_read_query(thermostat_id, sequence)
+            with self.lock:
+                self.pending_reads[uid] = (sequence, sent_at)
             try:
                 info = client.publish(topic, payload=payload, qos=1, retain=False)
                 if info.rc != mqtt.MQTT_ERR_SUCCESS:
@@ -360,9 +382,23 @@ class Client:
                 with self.lock:
                     self.publish_errors += 1
                     self.last_error = 'read_request_failed'
+                    self.pending_reads.pop(uid, None)
                 continue  # One failed target must not prevent reading the other zone.
             with self.lock:
                 self.queries_sent += 1
+                collection[uid]['read_requests'] = collection[uid].get('read_requests', 0)+1
+            # The app requests one selected zone at a time. Do not publish the
+            # whole multi-zone batch back-to-back after broker acknowledgements.
+            with self.condition:
+                replied = self.condition.wait_for(
+                    lambda: collection[uid].get('last_query_response', 0) >= sent_at
+                    or not self.connected or generation != self._generation,
+                    timeout=self.read_reply_timeout)
+                if not replied:
+                    collection[uid]['read_timeouts'] = collection[uid].get('read_timeouts', 0)+1
+                self.pending_reads.pop(uid, None)
+            if not self.connected or generation != self._generation:
+                return
         self.read_cloud_snapshots()
 
     def read_cloud_snapshots(self):
@@ -375,6 +411,8 @@ class Client:
                 if timestamp_ms < 946684800000 or age < -30 or age >= STALE_SECONDS:
                     with self.lock:
                         self.cloud_stale += 1
+                        if uid in self.zones:
+                            self.zones[uid]['last_cloud_result'] = 'stale_or_invalid_timestamp'
                     continue
                 observed_at = time.monotonic()-max(0, age)
                 with self.lock:
@@ -382,6 +420,7 @@ class Client:
                     if zone is None:
                         continue
                     self.cloud_reads += 1
+                    zone['last_cloud_result'] = 'ok' if values else 'no_recognized_fields'
                     for key, value in values.items():
                         if observed_at > zone['value_times'].get(key, float('-inf')):
                             zone['values'][key] = value
@@ -389,9 +428,15 @@ class Client:
                             zone['field_sources'][key] = 'cloud_snapshot'
             except AuthError:
                 raise
-            except (CloudError, ValueError, TypeError):
+            except (CloudError, ValueError, TypeError) as exc:
                 with self.lock:
                     self.cloud_errors += 1
+                    if uid in self.zones:
+                        status = re.fullmatch(r'HTTP ([0-9]{3})',str(exc))
+                        self.zones[uid]['last_cloud_result'] = (
+                            'http_'+status[1] if status else
+                            'missing_snapshot_timestamp' if str(exc)=='Missing cloud snapshot timestamp' else
+                            'request_or_format_error')
         self.notify()
 
     def next_sequence(self):
@@ -508,10 +553,14 @@ class Client:
             if retained:
                 return
             zone['seen'] = time.monotonic()
+            pending = self.pending_reads.get(uid if uid is not None else boiler_uid)
+            if decoded['tipo'] == 3 and pending and decoded['message_id'] == pending[0]:
+                zone['last_query_response'] = zone['seen']
+                zone['read_replies'] = zone.get('read_replies', 0)+1
             for field in decoded['campi']:
                 if 'nome' in field and 'valore' in field:
                     if boiler_uid is not None and field['nome'] not in {
-                        'rele_caldaia', 'collegamento_caldaia', 'opentherm_connesso'}:
+                        'rele_caldaia', 'caldaia_accesa', 'collegamento_caldaia', 'opentherm_connesso'}:
                         continue
                     zone['values'][field['nome']] = field['valore']
                     zone['value_times'][field['nome']] = time.monotonic()

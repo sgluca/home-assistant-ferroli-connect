@@ -1,7 +1,7 @@
 {
   "domain": "ferroli_connect",
   "name": "Ferroli Connect",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "config_flow": true,
   "integration_type": "hub",
   "iot_class": "cloud_polling",
