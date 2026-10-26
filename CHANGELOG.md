@@ -2,7 +2,7 @@
 
 ## 0.3.2
 
-- Corretto il caso di limiti uguali o invertiti (incluso minimo = massimo = 0): il pannello usa un intervallo di visualizzazione valido e le scritture vengono rifiutate finché non arrivano limiti coerenti. La causa della segnalazione reale è ancora da confermare tramite gli attributi dell’entità.
+- Corretti i pulsanti +/− quando il ricevitore restituisce minimo = massimo = 0: il valore veniva vincolato a zero e inviato al dispositivo. In questo caso si usa ora l’intervallo 5–35 °C del controllo manuale/automatico dell’app ufficiale, anche per validare i comandi. I limiti validi ricevuti restano prioritari; altre coppie incoerenti bloccano la scrittura.
 
 - L'entità **Caldaia accesa** perde il suffisso “(app)”, mantenendo identificativo e significato dello stato.
 - Aggiunte istruzioni per provare i comandi di temperatura sulle due zone tramite le entità Termostato, già disponibili dalla 0.3.0.
